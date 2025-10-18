@@ -1,0 +1,4 @@
+label,episodes,alpha,gamma,epsilon_init,min_epsilon,max_epsilon,decay_rate,use_decay,is_slippery,map_name,final_avg_reward_last_window,sr_greedy_100
+"α=0.8, γ=0.99, decay=0.001, slip=True",5000,0.8,0.99,1.0,0.01,1.0,0.001,True,True,4x4,0.355,56.0
+"α=0.6, γ=0.99, decay=0.001, slip=True",5000,0.6,0.99,1.0,0.01,1.0,0.001,True,True,4x4,0.55,81.0
+"α=0.8, γ=0.99, decay=0.002, slip=True",5000,0.8,0.99,1.0,0.01,1.0,0.002,True,True,4x4,0.46,0.0
