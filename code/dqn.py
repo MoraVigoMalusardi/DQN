@@ -4,7 +4,6 @@ import math
 from dataclasses import dataclass, asdict
 from typing import Deque, Dict, List, Optional, Tuple
 from collections import deque
-
 import numpy as np
 import gymnasium as gym
 
@@ -15,6 +14,9 @@ from torch.utils.tensorboard import SummaryWriter
 
 import matplotlib.pyplot as plt
 import numpy as np
+
+from arquitectures import MLP, CNN
+from environments import SimpleFrameStack
 
 @dataclass
 class DQNConfig:
@@ -77,22 +79,6 @@ class ReplayBuffer:
         return self.size
 
 
-class MLP(nn.Module):
-    """ Simple MLP """
-    def __init__(self, input_dim: int, output_dim: int):
-        super().__init__()
-        # Uso la arquitectura que dan en la consigna
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 64),
-            nn.ReLU(),
-            nn.Linear(64, 64),
-            nn.ReLU(),
-            nn.Linear(64, output_dim),
-        )
-    def forward(self, x):
-        return self.net(x)
-
-
 class DQNAgent:
     def __init__(self, cfg: DQNConfig):
         self.cfg = cfg
@@ -104,12 +90,27 @@ class DQNAgent:
             np.random.seed(cfg.seed)
             torch.manual_seed(cfg.seed)
 
-        obs_shape = self.env.observation_space.shape
+        # miramos una observación para decidir si es imagen
+        obs0, _ = self.env.reset()
+        is_image = (isinstance(obs0, np.ndarray) and obs0.ndim == 3)
+
+        # Si es imagen, aplicamos framestack (k=4) y volvemos a pedir obs
+        if is_image:
+            self.env = SimpleFrameStack(self.env, k=4)
+            obs0, _ = self.env.reset()
+
+        obs_shape = obs0.shape                   # (D,)  o  (C*k, H, W)
         n_actions = self.env.action_space.n
 
-        # Inicializamos las dos redes
-        self.policy_net = MLP(input_dim=obs_shape[0], output_dim=n_actions).to(self.device)
-        self.target_net = MLP(input_dim=obs_shape[0], output_dim=n_actions).to(self.device)
+        # Elegimos MLP o CNN
+        if is_image:
+            C, H, W = obs_shape
+            self.policy_net = CNN(C, (H, W), n_actions).to(self.device)
+            self.target_net = CNN(C, (H, W), n_actions).to(self.device)
+        else:
+            self.policy_net = MLP(input_dim=obs_shape[0], output_dim=n_actions).to(self.device)
+            self.target_net = MLP(input_dim=obs_shape[0], output_dim=n_actions).to(self.device)
+
 
         # Copiamos los pesos de la red de politica a la red objetivo
         self.target_net.load_state_dict(self.policy_net.state_dict())
@@ -121,7 +122,6 @@ class DQNAgent:
 
         self.optimizer = optim.Adam(self.policy_net.parameters(), lr=cfg.lr)
         self.loss_fn = nn.SmoothL1Loss() # Huber Loss: Es MSE para errores chicos y L1 lineal para errores grandes
-
         self.buffer = ReplayBuffer(cfg.buffer_capacity, obs_shape)
 
         ts = time.strftime("%Y%m%d-%H%M%S") 
@@ -147,7 +147,12 @@ class DQNAgent:
             return self.env.action_space.sample()
         
         # Sino tomamos la acción greedy según la policy net
-        obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device).unsqueeze(0) 
+        obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
+        if obs_t.ndim == 1:
+            obs_t = obs_t.unsqueeze(0)                 
+        elif obs_t.ndim == 3:
+            obs_t = obs_t.unsqueeze(0) 
+
         q_values = self.policy_net(obs_t)
         return int(torch.argmax(q_values, dim=1).item()) # Devuelve la acción con mayor Q value 
 
@@ -254,6 +259,7 @@ class DQNAgent:
             "final_mean_100": float(np.mean(episode_rewards[-100:])),
             "total_steps": int(self.global_step),
             "rewards": episode_rewards, 
+            "global_steps": self.global_step,
         }
 
     @torch.no_grad()
@@ -273,23 +279,10 @@ class DQNAgent:
         return {"mean_reward": float(np.mean(rewards)), "std_reward": float(np.std(rewards))}
 
 
-def train_dqn_cartpole(config_overrides: Optional[dict] = None):
+def train_dqn_cartpole():
     cfg = DQNConfig()
 
-    if config_overrides:
-        for k, v in config_overrides.items():
-            setattr(cfg, k, v)
-
-    agent = DQNAgent(cfg)
-    summary = agent.train()
-    eval_res = agent.evaluate(episodes=20, epsilon_eval=0.0)
-    print(f"Eval (greedy): mean={eval_res['mean_reward']:.1f} ± {eval_res['std_reward']:.1f}")
-    return agent, {**summary, **{f'eval_{k}': v for k, v in eval_res.items()}}
-
-
-if __name__ == "__main__":
-    agent, summary = train_dqn_cartpole(
-        config_overrides={
+    config_overrides={
             "env_id" : "CartPole-v1",
             "gamma" : 0.99,
             "lr" : 1e-3,
@@ -299,7 +292,7 @@ if __name__ == "__main__":
             "train_freq" : 1,
             "target_update_freq" : 1000,
             "max_episodes" : 1000,
-            "max_steps_per_episode" : 500, # la consigna dice 1000, pero en https://gymnasium.farama.org/environments/classic_control/cart_pole/ dice 500
+            "max_steps_per_episode" : 1000, # la consigna dice 1000, pero en https://gymnasium.farama.org/environments/classic_control/cart_pole/ dice 500
             "seed" : 0,
             "epsilon_start" : 1.0,
             "epsilon_end" : 0.05,
@@ -307,10 +300,78 @@ if __name__ == "__main__":
             "log_dir" : "runs/dqn_cartpole",
             "checkpoint_path" : "dqn_cartpole.pt",
             "device" : "cuda" if torch.cuda.is_available() else "cpu"
-        })
-    print("Summary:", summary)
+    }
+
+    for k, v in config_overrides.items():
+        setattr(cfg, k, v)
+
+    agent = DQNAgent(cfg)
+    summary = agent.train()
+    eval_res = agent.evaluate(episodes=20, epsilon_eval=0.0)
+    print(f"Eval (greedy): mean={eval_res['mean_reward']:.1f} ± {eval_res['std_reward']:.1f}")
+    return agent, {**summary, **{f'eval_{k}': v for k, v in eval_res.items()}}
+
+
+def train_dqn_minatar_breakout():
+    cfg = DQNConfig()
+    defaults = {
+        "env_id": "MinAtar/Breakout-v0",
+        "gamma": 0.99,
+        "lr": 2.5e-4,
+        "batch_size": 32,
+        "buffer_capacity": 200_000,
+        "learning_starts": 5_000,
+        "train_freq": 4,
+        "target_update_freq": 2_000,        # en pasos
+        "max_episodes": 30000,
+        "max_steps_per_episode": 2_000,
+        "epsilon_start": 1.0,
+        "epsilon_end": 0.05,
+        "epsilon_decay_rate": 1.0/200_000,  # decaimiento suave a ~200k steps
+        "log_dir": "runs/dqn_minatar_breakout",
+        "checkpoint_path": "dqn_minatar_breakout.pt",
+    }
+    for k, v in defaults.items():
+        setattr(cfg, k, v)
+
+    agent = DQNAgent(cfg)
+    summary = agent.train()
+    eval_res = agent.evaluate(episodes=20, epsilon_eval=0.0)
+    print(f"Eval Breakout (greedy): mean={eval_res['mean_reward']:.2f} ± {eval_res['std_reward']:.2f}")
+    print("Global steps:", summary["global_steps"])
+    return agent, {**summary, **{f"eval_{k}": v for k, v in eval_res.items()}}
+
+def plot_rewards(summary: Dict[str, float], title: str):
     rewards = np.array(summary["rewards"], dtype=np.float32)
     plt.plot(rewards)
     plt.xlabel("Episodio"); plt.ylabel("Reward"); plt.grid(True, alpha=0.3)
-    plt.title("DQN – Reward por episodio")
-    plt.tight_layout(); plt.show()
+    plt.title(title)
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(f"{title}.png")
+
+
+def plot_moving_average_rewards(summary: Dict[str, float], title: str, window: int = 100, ):
+    rewards = np.asarray(summary["rewards"], dtype=np.float32)
+    if rewards.size < window:
+        print(f"Hay solo {rewards.size} episodios; el moving average de ventana {window} necesita ≥ {window}.")
+        return
+    ma = np.convolve(rewards, np.ones(window, dtype=np.float32)/window, mode="valid")
+    x = np.arange(window-1, window-1 + ma.size)  # alinear con el último episodio incluido en cada promedio
+
+    plt.figure()
+    plt.plot(x, ma, label=f"Mean {window}-ep")
+    plt.xlabel("Episodio"); plt.ylabel("Reward promedio"); plt.grid(True, alpha=0.3)
+    plt.title(f"{title} - Moving Average ({window} episodios)")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(f"{title}.png")
+
+
+if __name__ == "__main__":
+    agent, summary = train_dqn_cartpole()
+    # agent, summary = train_dqn_minatar_breakout()
+    # print("Summary:", summary)
+    plot_rewards(summary, title="DQN_CartPole")
+    plot_moving_average_rewards(summary, title="DQN_CartPole", window=100)
