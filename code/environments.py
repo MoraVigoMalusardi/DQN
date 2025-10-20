@@ -1,5 +1,6 @@
 import numpy as np
 import gymnasium as gym
+import collections
 
 class ConstantRewardEnv(gym.Env):
     """
@@ -11,25 +12,13 @@ class ConstantRewardEnv(gym.Env):
     """
     def __init__(self):
         super().__init__()
-        self.observation_space = gym.spaces.Box(low=0.0, high=0.0, shape=(1,), dtype=int) # Aunque la observación es constante, devolver un vector np.array([0]) es más estándar si después vamos a usar redes neuronales, porque muchas esperan vectores como entrada.
-        """
-        - low (Union[SupportsFloat, np.ndarray]): Lower bounds of the intervals.
-        - high (Union[SupportsFloat, np.ndarray]): Upper bounds of the intervals.
-        - shape (Optional[Sequence[int]]): This only needs to be specified if both low and high are scalars and determines the shape of the space. Otherwise, the shape is inferred from the shape of low or high.
-        - dtype: The dtype of the elements of the space. If this is an integer type, the Box is essentially a discrete space.
-        """
-        self.action_space = gym.spaces.Discrete(1) # Una sola accion posible: 0
+        self.observation_space = gym.spaces.Discrete(1)   # 1 estado: 0
+        self.action_space = gym.spaces.Discrete(1)        # Una sola accion posible: 0
         self.rewards = {0: 1} # Recompensa constante +1 para la unica accion posible 0
     
     # Internal function for current observation.
     def _get_obs(self):
-        """
-        Converts internal state to observation format.
-    
-        Returns
-            np array: current observation. Always [0]
-        """
-        return np.array([0], dtype=np.float32)
+        return 0
     
     def reset(self, seed=None, options=None):
         """ Resets the environment to an initial state and returns an initial observation. """
@@ -73,23 +62,17 @@ class RandomObsBinaryRewardEnv(gym.Env):
 
     def __init__(self):
         super().__init__()
-        self.observation_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=int) 
+        self.observation_space = gym.spaces.Discrete(2)   # {0,1}
         self.action_space = gym.spaces.Discrete(1) # Una sola accion posible: 0
-        self.rewards = {-1: -1, 1: 1} # Recompensa +1 si la observacion es +1 y -1 si la observacion es -1
+        self.rewards = {0: -1, 1: 1} # Recompensa +1 si la observacion es +1 y -1 si la observacion es -1
         self.state = None 
 
     def _get_obs(self):
-        """
-        Converts internal state to observation format.
-
-        Returns
-            np array: current observation. 
-        """
-        return np.array([self.state], dtype=np.float32)
+        return int(self.state)
     
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.state = np.random.choice([-1, 1]) # Estado inicial aleatorio entre -1 y 1
+        self.state = np.random.randint(0, 2)  # 0 o 1
         return self._get_obs(), {}
 
     def step(self, action):
@@ -101,7 +84,7 @@ class RandomObsBinaryRewardEnv(gym.Env):
     def close(self):
         pass
 
-class TwoStepDelayedRewardEnv(gym.env):
+class TwoStepDelayedRewardEnv(gym.Env):
     """
     Acción única, observación determinista, dos pasos, recompensa diferida
         ● Acciones disponibles: 1 (única acción)
@@ -112,20 +95,14 @@ class TwoStepDelayedRewardEnv(gym.env):
 
     def __init__(self):
         super().__init__()
-        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=int) 
+        self.observation_space = gym.spaces.Discrete(2)   # {0,1}
         self.action_space = gym.spaces.Discrete(1) # Una sola accion posible: 0
         self.rewards = {0: 0, 1: 1} # Recompensa +1 si la observacion es +1 y -1 si la observacion es -1
         self.state = None 
         self.step_count = 0
     
     def _get_obs(self):
-        """
-        Convert internal state to observation format.
-
-        Returns:
-            np.ndarray: current observation. Either [0] or [1]
-        """
-        return np.array([self.state], dtype=np.float32)
+        return int(self.state)
     
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
@@ -149,3 +126,43 @@ class TwoStepDelayedRewardEnv(gym.env):
     
     def close(self):
         pass
+
+# Wrapper para apilar k frames de MinAtar
+class SimpleFrameStack:
+    def __init__(self, env, k: int = 4):
+        self.env = env
+        self.k = k
+        self.frames = collections.deque(maxlen=k)
+        self.observation_space = env.observation_space
+        self.action_space = env.action_space
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        obs = self._preprocess(obs)
+        self.frames.clear()
+        for _ in range(self.k):
+            self.frames.append(obs)
+        return self._get_obs(), info
+
+    def step(self, action):
+        next_obs, r, terminated, truncated, info = self.env.step(action)
+        next_obs = self._preprocess(next_obs)
+        self.frames.append(next_obs)
+        return self._get_obs(), r, terminated, truncated, info
+
+    def _get_obs(self):
+        # Apila a lo largo del canal: (C*k, H, W)
+        return np.concatenate(list(self.frames), axis=0)
+
+    def _preprocess(self, obs):
+        # pasamos de (H, W, C) a (C, H, W) 
+        if obs.ndim == 3:
+            obs = np.transpose(obs, (2, 0, 1))
+        obs = obs.astype(np.float32)
+        return obs / 1.0
+
+    def render(self, *args, **kwargs):
+        return self.env.render(*args, **kwargs)
+
+    def close(self):
+        self.env.close()
