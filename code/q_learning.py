@@ -4,8 +4,8 @@ from dataclasses import dataclass, asdict
 from typing import List, Dict, Optional
 import math
 import matplotlib.pyplot as plt
-
-
+from environments import ConstantRewardEnv, RandomObsBinaryRewardEnv, TwoStepDelayedRewardEnv
+import pandas as pd
 
 @dataclass
 class QLearningConfig:
@@ -25,17 +25,21 @@ class QLearningConfig:
     log_every: int = 100  # for moving average plotting
 
 
+envs = {
+        "ConstantRewardEnv": ConstantRewardEnv,
+        "RandomObsBinaryRewardEnv": RandomObsBinaryRewardEnv,
+        "TwoStepDelayedRewardEnv": TwoStepDelayedRewardEnv,
+        "CartPole-v1" : lambda: gym.make("FrozenLake-v1", map_name="4x4", is_slippery=True)
+        # is slippery: If true the player will move in intended 
+        # direction with probability specified by the success_rate else will move 
+        # in either perpendicular direction with equal probability in both directions. (lo saque de https://gymnasium.farama.org/environments/toy_text/frozen_lake/)
+}
 
 class QLearningAgent:
     def __init__(self, config: QLearningConfig):
         self.config = config
-        self.env = gym.make(
-            config.env_name,
-            map_name=config.map_name,
-            is_slippery=config.is_slippery, # If true the player will move in intended 
-            # direction with probability specified by the success_rate else will move 
-            # in either perpendicular direction with equal probability in both directions. (lo saque de https://gymnasium.farama.org/environments/toy_text/frozen_lake/)
-        )
+        self.env = envs[config.env_name]()
+
         if config.seed is not None:
             self.env.reset(seed=config.seed)
             np.random.seed(config.seed)
@@ -119,7 +123,7 @@ class QLearningAgent:
                     break
         return 100.0 * successes / episodes
 
-    def plot_rewards(self, window: int = 100):
+    def plot_rewards(self, window: int = 100, title: str = "q_learning_rewards"):
         arr = np.array(self.episode_rewards, dtype=np.float32)
         if len(arr) == 0:
             print("No hay recompensas para graficar.")
@@ -127,11 +131,11 @@ class QLearningAgent:
         moving = np.convolve(arr, np.ones(window)/window, mode="valid") # calculamos la media movil de las recompensas para que sea mas facil de visualizar y mas suave 
         plt.figure()
         plt.plot(moving)
-        plt.title(f"Recompensa media movil (window={window})")
+        plt.title(f"{title} - media movil (window={window})")
         plt.xlabel("Bloques de episodios")
         plt.ylabel("Reward promedio")
         plt.grid()
-        plt.savefig("q_learning_rewards.png")
+        plt.savefig(f"{title}.png")
         plt.show()
 
     def summary(self) -> Dict[str, float]:
@@ -142,7 +146,7 @@ class QLearningAgent:
         }
 
 
-def run():
+def run_FrozenLake():
     cfg = QLearningConfig(
         episodes=5000,
         alpha=0.8,
@@ -168,6 +172,37 @@ def run():
         pass
     return agent
 
+def run_custom_envs():
+    for env_name in ["ConstantRewardEnv", "RandomObsBinaryRewardEnv", "TwoStepDelayedRewardEnv"]:
+        print(f"Running Q-Learning on {env_name}")
+        cfg = QLearningConfig(
+            env_name=env_name,
+            episodes=1000,
+            alpha=0.8,
+            gamma=0.99,
+            epsilon=0.5,
+            min_epsilon=0.01,
+            max_epsilon=1.0,
+            decay_rate=0.001,
+            use_decay=True,
+            log_every=100,
+            seed=0,
+        )
+        agent = QLearningAgent(cfg)
+        agent.train()
+        # Muestro la Q-table 
+        print(f"Tabla de valores Q para {env_name}:")
+        df_q = pd.DataFrame(agent.Q, columns=[f"A{a}" for a in range(agent.Q.shape[1])])
+        df_q.index = [f"S{s}" for s in range(agent.Q.shape[0])]
+        print(df_q)
+
+        avg_reward = np.mean(agent.episode_rewards)
+        print(f"Average reward over training: {avg_reward:.3f}")
+        try:
+            agent.plot_rewards(window=50, title=f"{env_name}_rewards")
+        except Exception:
+            pass
+    return
 
 if __name__ == "__main__":
-    run() 
+    run_custom_envs() 

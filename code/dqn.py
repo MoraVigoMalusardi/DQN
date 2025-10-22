@@ -66,7 +66,9 @@ class ReplayBuffer:
         self.size = min(self.size + 1, self.capacity)
 
     def sample(self, batch_size: int):
-        idx = np.random.randint(0, self.size, size=batch_size)
+        """ Sample a batch of transitions uniformly """
+        # idx es un array de índices aleatorios
+        idx = np.random.randint(0, self.size, size=batch_size) # tamano=batch_size, valores entre 0 y self.size-1
         return (
             self.obs_buf[idx],
             self.act_buf[idx],
@@ -163,24 +165,26 @@ class DQNAgent:
         if len(self.buffer) < cfg.batch_size or self.global_step < cfg.learning_starts:
             return None
 
-        # Sampleamos mini-batch de transiciones del replay buffer
+        # 4) Sampleamos mini-batch de transiciones del replay buffer
         obs, act, rew, next_obs, done = self.buffer.sample(cfg.batch_size)
 
-        # convertimos a tensores
+            # convertimos a tensores
         obs_t = torch.as_tensor(obs, dtype=torch.float32, device=self.device)
         act_t = torch.as_tensor(act, dtype=torch.int64, device=self.device).unsqueeze(1)
         rew_t = torch.as_tensor(rew, dtype=torch.float32, device=self.device).unsqueeze(1)
         next_obs_t = torch.as_tensor(next_obs, dtype=torch.float32, device=self.device)
         done_t = torch.as_tensor(done, dtype=torch.float32, device=self.device).unsqueeze(1)
 
-        # Calculamos los Q values actuales 
+        # 5) Calculo yi (output objetivo) usando la red target
+        with torch.no_grad():
+            # yi = ri + γ * max_a' Q_target(s', a') 
+            q_next = self.target_net(next_obs_t).max(dim=1, keepdim=True)[0]
+            q_target = rew_t + self.cfg.gamma * q_next * (1.0 - done_t) # si done=1, no sumamos valor futuro. El valor de un estado terminal es solo el reward inmediato
+
+            # Calculo el valor de Q(s, a) usando la red de mi politica
         q_pred = self.policy_net(obs_t).gather(1, act_t)
 
-        # Calculamos los Q values target usando la target net
-        with torch.no_grad():
-            q_next = self.target_net(next_obs_t).max(dim=1, keepdim=True)[0]
-            q_target = rew_t + self.cfg.gamma * q_next * (1.0 - done_t)
-
+        # 6) Calculo loss y optimizo
         loss = self.loss_fn(q_pred, q_target)
         self.optimizer.zero_grad(set_to_none=True)
         loss.backward()
@@ -213,20 +217,26 @@ class DQNAgent:
             total_reward = 0.0
 
             for t in range(cfg.max_steps_per_episode):
+
+                # 1) seleccionamos una accion e-greedy
                 epsilon = self.epsilon_by_step(self.global_step)
                 action = self.select_action(obs, epsilon)
+
+                # 2) ejecutamos la accion y observamos
                 next_obs, reward, terminated, truncated, _ = self.env.step(action)
                 done = terminated or truncated
 
+                # 3) la guardamos en el buffer
                 self.buffer.push(obs, action, reward, next_obs, done)
 
-                if self.global_step % cfg.train_freq == 0:
-                    loss = self.optimize()
-                    if loss is not None:
-                        losses_window.append(loss)
-                        # Guardamos loss para tensorboard
-                        self.writer.add_scalar("loss/td_loss", loss, self.global_step)
+                # 4) samplear minibatch  -  5) calcular yi  -  6) optimizar
+                loss = self.optimize()
+                if loss is not None:
+                    losses_window.append(loss)
+                    # Guardamos loss para tensorboard
+                    self.writer.add_scalar("loss/td_loss", loss, self.global_step)
 
+                # 7) Cada target_update_freq pasos, actualizamos la red target 
                 self.maybe_update_target()
 
                 total_reward += reward
@@ -291,11 +301,11 @@ def train_dqn_cartpole():
             "learning_starts" : 1000,
             "train_freq" : 1,
             "target_update_freq" : 1000,
-            "max_episodes" : 1000,
+            "max_episodes" : 4000,
             "max_steps_per_episode" : 1000, # la consigna dice 1000, pero en https://gymnasium.farama.org/environments/classic_control/cart_pole/ dice 500
             "seed" : 0,
             "epsilon_start" : 1.0,
-            "epsilon_end" : 0.05,
+            "epsilon_end" : 0.01,
             "epsilon_decay_rate" : 0.001,
             "log_dir" : "runs/dqn_cartpole",
             "checkpoint_path" : "dqn_cartpole.pt",
@@ -373,5 +383,5 @@ if __name__ == "__main__":
     agent, summary = train_dqn_cartpole()
     # agent, summary = train_dqn_minatar_breakout()
     # print("Summary:", summary)
-    plot_rewards(summary, title="DQN_CartPole")
-    plot_moving_average_rewards(summary, title="DQN_CartPole", window=100)
+    plot_rewards(summary, title="DQN_CartPole_rewards")
+    plot_moving_average_rewards(summary, title="DQN_CartPole_ma_rewards", window=100)

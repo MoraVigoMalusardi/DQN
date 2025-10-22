@@ -9,6 +9,8 @@ class ConstantRewardEnv(gym.Env):
         ● Observaciones: constante 0
         ● Duración: 1 paso de tiempo (episodio de una sola transición)
         ● Recompensa: +1 en cada episodio
+
+    Q learning deberia dar como resultado Q(0,0) = 1
     """
     def __init__(self):
         super().__init__()
@@ -55,9 +57,11 @@ class RandomObsBinaryRewardEnv(gym.Env):
     Acción única, observación aleatoria, un solo paso, recompensa dependiente de
     la observación
         ● Acciones disponibles: 1 (única acción)
-        ● Observaciones: aleatorias, con valor +1 o -1
+        ● Observaciones: aleatorias, con valor +1 o -1 --> las cambie a 0 y 1
         ● Duración: 1 paso de tiempo
-        ● Recompensa: coincide con la observación (+1 o -1)
+        ● Recompensa: coincide con la observación (+1 o -1) --> puse -1 para 0 y +1 para 1
+
+    Q learning deberia dar como resultado Q(0,0) = -1 y Q(1,0) = +1
     """
 
     def __init__(self):
