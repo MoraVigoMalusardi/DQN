@@ -29,7 +29,7 @@ envs = {
         "ConstantRewardEnv": ConstantRewardEnv,
         "RandomObsBinaryRewardEnv": RandomObsBinaryRewardEnv,
         "TwoStepDelayedRewardEnv": TwoStepDelayedRewardEnv,
-        "CartPole-v1" : lambda: gym.make("FrozenLake-v1", map_name="4x4", is_slippery=True)
+        "FrozenLake-v1" : lambda: gym.make("FrozenLake-v1", map_name="4x4", is_slippery=False)
         # is slippery: If true the player will move in intended 
         # direction with probability specified by the success_rate else will move 
         # in either perpendicular direction with equal probability in both directions. (lo saque de https://gymnasium.farama.org/environments/toy_text/frozen_lake/)
@@ -123,11 +123,8 @@ class QLearningAgent:
                     break
         return 100.0 * successes / episodes
 
-    def plot_rewards(self, window: int = 100, title: str = "q_learning_rewards"):
+    def plot_rewards_moving_average(self, window: int = 100, title: str = "q_learning_rewards"):
         arr = np.array(self.episode_rewards, dtype=np.float32)
-        if len(arr) == 0:
-            print("No hay recompensas para graficar.")
-            return
         moving = np.convolve(arr, np.ones(window)/window, mode="valid") # calculamos la media movil de las recompensas para que sea mas facil de visualizar y mas suave 
         plt.figure()
         plt.plot(moving)
@@ -145,18 +142,59 @@ class QLearningAgent:
             "final_avg_reward_last_window": float(np.mean(self.episode_rewards[-self.config.log_every:])) if self.episode_rewards else 0.0,
         }
 
+def plot_several_rewards(agents: List[QLearningAgent], window: int = 100, title: str = "q_learning_multiple_rewards"):
+    plt.figure()
+    for agent in agents:
+        arr = np.array(agent.episode_rewards, dtype=np.float32)
+        moving = np.convolve(arr, np.ones(window)/window, mode="valid")
+        plt.plot(moving, label=f"α={agent.config.alpha}, ε={agent.config.epsilon}")
+    plt.title(f"Comparacion de hiperparams en FrozenLake - (window={window})")
+    plt.xlabel("Bloques de episodios")
+    plt.ylabel("Reward promedio")
+    plt.legend()
+    plt.grid()
+    plt.savefig(f"{title}.png")
+    plt.show()
+
+def run_FrozenLake_hyperparams():
+    alphas = [0.1, 0.5, 0.8]
+    epsilons = [0.1, 0.3, 0.5]
+    agents = []
+    for alpha in alphas:
+        for epsilon in epsilons:
+            print(f"Running Q-Learning with alpha={alpha}, epsilon={epsilon}")
+            cfg = QLearningConfig(
+                env_name="FrozenLake-v1",
+                episodes=5000,
+                alpha=alpha,
+                gamma=0.99,
+                epsilon=epsilon,
+                min_epsilon=0.01,
+                max_epsilon=1.0,
+                decay_rate=0,
+                is_slippery=False,
+                use_decay=False,
+                log_every=500,
+                seed=0,
+            )
+            agent = QLearningAgent(cfg)
+            agent.train()
+            agents.append(agent)
+    plot_several_rewards(agents, window=100, title="FrozenLake_QLearning_hyperparams_rewards")
+    return agents
 
 def run_FrozenLake():
     cfg = QLearningConfig(
+        env_name="FrozenLake-v1",
         episodes=5000,
-        alpha=0.8,
+        alpha=0.1,
         gamma=0.99,
-        epsilon=1.0,
+        epsilon=0.1,
         min_epsilon=0.01,
         max_epsilon=1.0,
-        decay_rate=0.001,
-        is_slippery=True,
-        use_decay=True,
+        decay_rate=0,
+        is_slippery=False,
+        use_decay=False,
         log_every=200,
         seed=0,
     )
@@ -167,7 +205,7 @@ def run_FrozenLake():
     print(f"Success rate (greedy): {sr_greedy:.1f}%")
     print(f"Success rate (epsilon=0.1): {sr_eps01:.1f}%")
     try:
-        agent.plot_rewards(window=100)
+        agent.plot_rewards_moving_average(window=100, title="FrozenLake_QLearning_rewards")
     except Exception:
         pass
     return agent
@@ -199,10 +237,12 @@ def run_custom_envs():
         avg_reward = np.mean(agent.episode_rewards)
         print(f"Average reward over training: {avg_reward:.3f}")
         try:
-            agent.plot_rewards(window=50, title=f"{env_name}_rewards")
+            agent.plot_rewards_moving_average(window=50, title=f"{env_name}_rewards")
         except Exception:
             pass
     return
 
 if __name__ == "__main__":
-    run_custom_envs() 
+    # run_custom_envs() 
+    # run_FrozenLake()
+    run_FrozenLake_hyperparams()
