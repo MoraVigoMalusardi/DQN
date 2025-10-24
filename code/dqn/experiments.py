@@ -50,6 +50,8 @@ def compare_target_network_vs_no_target(
 ):
     """
     Experimento: compara DQN con target network frente a DQN SIN target network (usamos la policy_net como target).
+    Ejecutamos varias veces (runs veces), cada vez usando una seed distinta.
+    Usamos el promedio de todas las ejecuciones. 
     """
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -140,6 +142,110 @@ def compare_target_network_vs_no_target(
     return {
         "with_target": results["with_target"],
         "no_target": results["no_target"],
+        "mean_with": mean_with,
+        "mean_no": mean_no,
+        "out_path": out_path,
+    }
+
+
+def compare_replay_vs_no_replay(env_id: str = "CartPole-v1", episodes: int = 500, runs: int = 3, seeds: list | None = None, window: int = 50, out_path: str = "plots/compare_replay_vs_no_replay.png"):
+    """
+    Compara DQN usando replay buffer vs no usarlo
+    (batch_size=1, buffer_capacity=1, learning_starts=0)
+    """
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if seeds is None:
+        seeds = list(range(runs))
+
+    results = {"with_replay": [], "no_replay": []}
+
+    for seed in seeds[:runs]:
+        base_overrides = {
+            "env_id": env_id,
+            "max_episodes": episodes,
+            "max_steps_per_episode": 500,
+            "seed": int(seed),
+            "buffer_capacity": 50000,
+            "batch_size": 64,
+            "learning_starts": 1000,
+            "train_freq": 1,
+            "target_update_freq": 1000,
+            "lr": 1e-3,
+            "epsilon_start": 1.0,
+            "epsilon_end": 0.01,
+            "epsilon_decay_rate": 0.0001,
+            "checkpoint_path": f"dqn_{env_id}_replay_seed{seed}.pt",
+            "log_dir": f"runs/dqn_{env_id}_replay_seed{seed}",
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+        }
+
+        # With replay (no cambio nada)
+        cfg = DQNConfig()
+        for k, v in base_overrides.items():
+            setattr(cfg, k, v)
+        agent = DQNAgent(cfg)
+        summary = agent.train()
+        rewards = list(summary.get("rewards", agent.episode_rewards))
+        results["with_replay"].append(np.asarray(rewards, dtype=np.float32))
+
+        # Sin replay : batch_size=1, buffer_capacity=1, learning_starts=0
+        no_r_overrides = {**base_overrides,
+                          "buffer_capacity": 1,
+                          "batch_size": 1,
+                          "learning_starts": 0,
+                          "checkpoint_path": f"dqn_{env_id}_noreplay_seed{seed}.pt",
+                          "log_dir": f"runs/dqn_{env_id}_noreplay_seed{seed}"}
+        cfg_nr = DQNConfig()
+        for k, v in no_r_overrides.items():
+            setattr(cfg_nr, k, v)
+        agent_nr = DQNAgent(cfg_nr)
+        summary_nr = agent_nr.train()
+        rewards_nr = list(summary_nr.get("rewards", agent_nr.episode_rewards))
+        results["no_replay"].append(np.asarray(rewards_nr, dtype=np.float32))
+
+    min_len_with = min(r.shape[0] for r in results["with_replay"])
+    min_len_no = min(r.shape[0] for r in results["no_replay"])
+    L = min(min_len_with, min_len_no)
+
+    arr_with = np.vstack([r[:L] for r in results["with_replay"]])
+    arr_no = np.vstack([r[:L] for r in results["no_replay"]])
+
+    mean_with = arr_with.mean(axis=0)
+    std_with = arr_with.std(axis=0)
+    mean_no = arr_no.mean(axis=0)
+    std_no = arr_no.std(axis=0)
+
+    def moving_avg(x, w):
+        if x.size < w:
+            return x
+        return np.convolve(x, np.ones(w)/w, mode="valid")
+
+    ma_mean_with = moving_avg(mean_with, window)
+    ma_mean_no = moving_avg(mean_no, window)
+    ma_std_with = moving_avg(std_with, window)
+    ma_std_no = moving_avg(std_no, window)
+
+    x = np.arange(ma_mean_with.size)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(x, ma_mean_with, label="DQN with replay", c="tab:blue")
+    plt.fill_between(x, ma_mean_with - ma_std_with, ma_mean_with + ma_std_with, color="tab:blue", alpha=0.2)
+    plt.plot(x, ma_mean_no, label="DQN no replay (online)", c="tab:orange")
+    plt.fill_between(x, ma_mean_no - ma_std_no, ma_mean_no + ma_std_no, color="tab:orange", alpha=0.2)
+    plt.xlabel("Episodios (media móvil)")
+    plt.ylabel("Reward promedio")
+    plt.title(f"Replay buffer vs No-replay ({env_id})")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_path)  
+    plt.show()
+    plt.close()
+
+    return {
+        "with_replay": results["with_replay"],
+        "no_replay": results["no_replay"],
         "mean_with": mean_with,
         "mean_no": mean_no,
         "out_path": out_path,
@@ -307,6 +413,9 @@ if __name__ == "__main__":
     # CartPole_DQN_vs_REINFORCE()
 
     # Experimento 2: Comparar DQN con y sin target network
-    compare_target_network_vs_no_target()
+    # compare_target_network_vs_no_target()
+
+    # Experimento 3: Comparar DQN con replay buffer vs sin replay (actualización online)
+    compare_replay_vs_no_replay()
 
     pass
