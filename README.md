@@ -53,6 +53,7 @@ Introduce dos mecanismos para estabilizar el aprendizaje:
 2. **Replay Buffer:** almacena transiciones pasadas \((s,a,r,s')\) y permite muestreo aleatorio para entrenar con batches de datos no correlacionados.
 
 La pérdida usada es la **Huber Loss**:
+
 $$
 L(\theta) \;=\; \mathbb{E}\Big[\operatorname{Huber}\big(r + \gamma \max_{a'} Q'(s',a';\theta^-) - Q(s,a;\theta)\big)\Big]
 $$
