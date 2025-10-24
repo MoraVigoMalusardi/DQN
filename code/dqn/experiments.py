@@ -39,6 +39,113 @@ except Exception as e:
     train_env = getattr(pg_main, "train_env")
 
 
+def compare_target_network_vs_no_target(
+    env_id: str = "CartPole-v1",
+    episodes: int = 500,
+    runs: int = 3,
+    seeds: list | None = None,
+    target_update_freq: int = 1000,
+    window: int = 50,
+    out_path: str = "plots/compare_target_vs_no_target.png",
+):
+    """
+    Experimento: compara DQN con target network frente a DQN SIN target network (usamos la policy_net como target).
+    """
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+
+    if seeds is None:
+        seeds = list(range(runs))
+
+    results = {"with_target": [], "no_target": []}
+
+    for seed in seeds[:runs]:
+        overrides = {
+            "env_id": env_id,
+            "max_episodes": episodes,
+            "max_steps_per_episode": 500,
+            "seed": int(seed),
+            "target_update_freq": int(target_update_freq),
+            "buffer_capacity": 50000,
+            "batch_size": 64,
+            "learning_starts": 1000,
+            "lr": 1e-3,
+            "epsilon_start": 1.0,
+            "epsilon_end": 0.01,
+            "epsilon_decay_rate": 0.0001,
+            "checkpoint_path": f"dqn_{env_id}_seed{seed}.pt",
+            "log_dir": f"runs/dqn_{env_id}_seed{seed}",
+            "device": "cuda" if torch.cuda.is_available() else "cpu",
+        }
+
+        # ------------------ Con target network ------------------
+        cfg = DQNConfig()
+        for k, v in overrides.items():
+            setattr(cfg, k, v)
+        agent = DQNAgent(cfg)
+        summary = agent.train()
+        rewards = list(summary.get("rewards", agent.episode_rewards))
+        results["with_target"].append(np.asarray(rewards, dtype=np.float32))
+
+        # ------------------ Sin target network: hacemos target_net = a policy_net ------------------
+        cfg_nt = DQNConfig()
+        for k, v in overrides.items():
+            setattr(cfg_nt, k, v)
+        agent_nt = DQNAgent(cfg_nt)
+        # forzamos que target_net apunte a policy_net (usa la misma instancia)
+        agent_nt.target_net = agent_nt.policy_net 
+        summary_nt = agent_nt.train()
+        rewards_nt = list(summary_nt.get("rewards", agent_nt.episode_rewards))
+        results["no_target"].append(np.asarray(rewards_nt, dtype=np.float32))
+
+    min_len_with = min(r.shape[0] for r in results["with_target"])
+    min_len_no = min(r.shape[0] for r in results["no_target"])
+    L = min(min_len_with, min_len_no)
+
+    arr_with = np.vstack([r[:L] for r in results["with_target"]])
+    arr_no = np.vstack([r[:L] for r in results["no_target"]])
+
+    mean_with = arr_with.mean(axis=0)
+    std_with = arr_with.std(axis=0)
+    mean_no = arr_no.mean(axis=0)
+    std_no = arr_no.std(axis=0)
+
+    def moving_avg(x, w):
+        if x.size < w:
+            return x
+        return np.convolve(x, np.ones(w)/w, mode="valid")
+
+    ma_mean_with = moving_avg(mean_with, window)
+    ma_mean_no = moving_avg(mean_no, window)
+    ma_std_with = moving_avg(std_with, window)
+    ma_std_no = moving_avg(std_no, window)
+
+    x_with = np.arange(ma_mean_with.size)
+    x_no = np.arange(ma_mean_no.size)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_with, ma_mean_with, label="DQN con target network", c="tab:blue")
+    plt.fill_between(x_with, ma_mean_with - ma_std_with, ma_mean_with + ma_std_with, color="tab:blue", alpha=0.2)
+    plt.plot(x_no, ma_mean_no, label="DQN sin target network", c="tab:orange")
+    plt.fill_between(x_no, ma_mean_no - ma_std_no, ma_mean_no + ma_std_no, color="tab:orange", alpha=0.2)
+    plt.xlabel("Episodios (media móvil)")
+    plt.ylabel("Reward promedio")
+    plt.title(f"Comparación: target network vs no target ({env_id})")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(out_path)
+    plt.show()
+    plt.close()
+
+    return {
+        "with_target": results["with_target"],
+        "no_target": results["no_target"],
+        "mean_with": mean_with,
+        "mean_no": mean_no,
+        "out_path": out_path,
+    }
+
+
 def CartPole_DQN_vs_REINFORCE():
     """ Compara el desempeño de DQN y REINFORCE en CartPole-v1 """
     config_overrides={
@@ -197,6 +304,9 @@ if __name__ == "__main__":
     # run_custom_envs()  --> TODAVIA NO ME FUNCIONA
 
     # 4.1: Graficar comparacion DQN vs REINFORCE en CartPole-v1
-    CartPole_DQN_vs_REINFORCE()
+    # CartPole_DQN_vs_REINFORCE()
+
+    # Experimento 2: Comparar DQN con y sin target network
+    compare_target_network_vs_no_target()
 
     pass
