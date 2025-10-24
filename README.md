@@ -54,10 +54,9 @@ Introduce dos mecanismos para estabilizar el aprendizaje:
 
 La pérdida usada es la **Huber Loss**:
 
-$$
-L(\theta) \;=\; \mathbb{E}\Big[\operatorname{Huber}\big(r + \gamma \max_{a'} Q'(s',a';\theta^-) - Q(s,a;\theta)\big)\Big]
-$$
-
+```text
+L(θ) = E[ Huber( r + γ · max_{a'} Q'(s', a'; θ⁻) − Q(s, a; θ) ) ]
+```
 
 ---
 
