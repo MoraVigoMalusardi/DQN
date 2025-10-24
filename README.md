@@ -37,9 +37,9 @@ code/
 ### Q-Learning (tabular)
 Q-Learning es un algoritmo *off-policy* que aprende una función de valor de acción \( Q(s,a) \) mediante actualizaciones iterativas:
 
-\[
-Q(s,a) \leftarrow Q(s,a) + \alpha [r + \gamma \max_{a'} Q(s',a') - Q(s,a)]
-\]
+$$
+Q(s,a) \leftarrow Q(s,a) + \alpha\left[r + \gamma \max_{a'} Q(s',a') - Q(s,a)\right]
+$$
 
 - Se utiliza una tabla Q discreta para representar los valores.
 - Se aplica exploración *ε-greedy* y opcionalmente un decaimiento exponencial de ε.
@@ -53,10 +53,10 @@ Introduce dos mecanismos para estabilizar el aprendizaje:
 2. **Replay Buffer:** almacena transiciones pasadas \((s,a,r,s')\) y permite muestreo aleatorio para entrenar con batches de datos no correlacionados.
 
 La pérdida usada es la **Huber Loss**:
+$$
+L(\theta) \;=\; \mathbb{E}\Big[\operatorname{Huber}\big(r + \gamma \max_{a'} Q'(s',a';\theta^-) - Q(s,a;\theta)\big)\Big]
+$$
 
-\[
-L(\theta) = \mathbb{E}\big[ \text{Huber}(r + \gamma \max_{a'} Q'(s',a';\theta^-) - Q(s,a;\theta)) \big]
-\]
 
 ---
 
