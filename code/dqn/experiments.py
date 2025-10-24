@@ -1,29 +1,117 @@
 from dqn import DQNAgent, DQNConfig
 import torch
+import numpy as np
+from pathlib import Path
+import sys
+import importlib
+import importlib.util
+import matplotlib.pyplot as plt
+
+# --- FIX: asegurar que se importe environments.py de PolicyGradient, no el de DQN ---
+PG_CODE_DIR = Path(__file__).resolve().parents[3] / "PolicyGradient" / "code"
+
+# 1) Poner PG_CODE_DIR al inicio de sys.path
+if str(PG_CODE_DIR) in sys.path:
+    sys.path.remove(str(PG_CODE_DIR))
+sys.path.insert(0, str(PG_CODE_DIR))
+importlib.invalidate_caches()
+
+# 2) Si ya existe un módulo llamado 'environments' (probablemente el de DQN),
+#    eliminarlo de sys.modules para forzar que se importe el de PolicyGradient.
+if "environments" in sys.modules:
+    try:
+        del sys.modules["environments"]
+    except KeyError:
+        pass
+
+# 3) Intentar importar main desde PG_CODE_DIR. Si falla por conflictos, cargar por ruta.
+try:
+    from main import train_env
+except Exception as e:
+    # fallback: cargar main.py directamente desde PG_CODE_DIR con un nombre exclusivo
+    main_path = PG_CODE_DIR / "main.py"
+    if not main_path.exists():
+        raise ImportError(f"No se encontró {main_path}") from e
+    spec = importlib.util.spec_from_file_location("pg_main", str(main_path))
+    pg_main = importlib.util.module_from_spec(spec)
+    sys.modules["pg_main"] = pg_main
+    spec.loader.exec_module(pg_main)
+    train_env = getattr(pg_main, "train_env")
 
 
-def train_dqn_cartpole():
+def CartPole_DQN_vs_REINFORCE():
+    """ Compara el desempeño de DQN y REINFORCE en CartPole-v1 """
+    config_overrides={
+        "env_id" : "CartPole-v1",
+        "gamma" : 0.99,
+        "lr" : 1e-3,
+        "batch_size" : 64,
+        "buffer_capacity" : 50000,
+        "learning_starts" : 1000,
+        "train_freq" : 1,
+        "target_update_freq" : 1000,
+        "max_episodes" : 500,
+        "max_steps_per_episode" : 500, # la consigna dice 1000, pero en https://gymnasium.farama.org/environments/classic_control/cart_pole/ dice 500
+        "seed" : 0,
+        "epsilon_start" : 1.0,
+        "epsilon_end" : 0.01,
+        "epsilon_decay_rate" : 0.0001,
+        "log_dir" : "runs/dqn_cartpole",
+        "checkpoint_path" : "dqn_cartpole.pt",
+        "device" : "cuda" if torch.cuda.is_available() else "cpu"
+    }
+    # Entrenar DQN
+    dqn_agent, dqn_results = train_dqn_cartpole(config_overrides=config_overrides)
+
+    # Entrenar REINFORCE
+    reinforce_rewards = train_env("CartPole-v1", episodes=500, obs=np.array([0.0, 0.0, 0.0, 0.0]), batch_size=10, early_stop=False)
+
+    # Resultados
+    dqn_mean_reward = np.mean(dqn_agent.episode_rewards)
+    dqn_std_reward = np.std(dqn_agent.episode_rewards)
+    reinforce_mean_reward = np.mean(reinforce_rewards)
+    reinforce_std_reward = np.std(reinforce_rewards)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(dqn_agent.episode_rewards, label='DQN Rewards', alpha=0.7)
+    plt.plot(reinforce_rewards, label='REINFORCE Rewards', alpha=0.7)
+    plt.xlabel('Episodes')
+    plt.ylabel('Rewards')
+    plt.title('DQN vs REINFORCE on CartPole-v1')
+    plt.legend()
+    plt.grid()
+    plt.savefig("plots/dqn_vs_reinforce_cartpole.png")
+    plt.show()
+    plt.close()
+
+    print(f"DQN CartPole-v1: mean={dqn_mean_reward:.2f} ± {dqn_std_reward:.2f}")
+    print(f"REINFORCE CartPole-v1: mean={reinforce_mean_reward:.2f} ± {reinforce_std_reward:.2f}")
+
+
+
+def train_dqn_cartpole(config_overrides=None):
     cfg = DQNConfig()
 
-    config_overrides={
-            "env_id" : "CartPole-v1",
-            "gamma" : 0.99,
-            "lr" : 1e-3,
-            "batch_size" : 64,
-            "buffer_capacity" : 50000,
-            "learning_starts" : 1000,
-            "train_freq" : 1,
-            "target_update_freq" : 1000,
-            "max_episodes" : 4000,
-            "max_steps_per_episode" : 500, # la consigna dice 1000, pero en https://gymnasium.farama.org/environments/classic_control/cart_pole/ dice 500
-            "seed" : 0,
-            "epsilon_start" : 1.0,
-            "epsilon_end" : 0.01,
-            "epsilon_decay_rate" : 0.0001,
-            "log_dir" : "runs/dqn_cartpole",
-            "checkpoint_path" : "dqn_cartpole.pt",
-            "device" : "cuda" if torch.cuda.is_available() else "cpu"
-    }
+    if not config_overrides:
+        config_overrides={
+                "env_id" : "CartPole-v1",
+                "gamma" : 0.99,
+                "lr" : 1e-3,
+                "batch_size" : 64,
+                "buffer_capacity" : 50000,
+                "learning_starts" : 1000,
+                "train_freq" : 1,
+                "target_update_freq" : 1000,
+                "max_episodes" : 4000,
+                "max_steps_per_episode" : 500, # la consigna dice 1000, pero en https://gymnasium.farama.org/environments/classic_control/cart_pole/ dice 500
+                "seed" : 0,
+                "epsilon_start" : 1.0,
+                "epsilon_end" : 0.01,
+                "epsilon_decay_rate" : 0.0001,
+                "log_dir" : "runs/dqn_cartpole",
+                "checkpoint_path" : "dqn_cartpole.pt",
+                "device" : "cuda" if torch.cuda.is_available() else "cpu"
+        }
 
     for k, v in config_overrides.items():
         setattr(cfg, k, v)
@@ -107,5 +195,8 @@ if __name__ == "__main__":
 
     # Experimento 1: Correr custom environments 
     # run_custom_envs()  --> TODAVIA NO ME FUNCIONA
+
+    # 4.1: Graficar comparacion DQN vs REINFORCE en CartPole-v1
+    CartPole_DQN_vs_REINFORCE()
 
     pass
