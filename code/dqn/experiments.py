@@ -6,6 +6,7 @@ import sys
 import importlib
 import importlib.util
 import matplotlib.pyplot as plt
+import time
 
 # --- FIX: asegurar que se importe environments.py de PolicyGradient, no el de DQN ---
 PG_CODE_DIR = Path(__file__).resolve().parents[3] / "PolicyGradient" / "code"
@@ -274,10 +275,36 @@ def CartPole_DQN_vs_REINFORCE():
         "device" : "cuda" if torch.cuda.is_available() else "cpu"
     }
     # Entrenar DQN
+    t0 = time.time()
     dqn_agent, dqn_results = train_dqn_cartpole(config_overrides=config_overrides)
+    t1 = time.time()
+    dqn_total_time = t1 - t0
+    dqn_rewards = np.asarray(dqn_agent.episode_rewards, dtype=np.float32)
+    n_dqn = dqn_rewards.size
+    dqn_times = np.linspace(0.0, dqn_total_time, n_dqn)
 
     # Entrenar REINFORCE
+    t0 = time.time()
     reinforce_rewards = train_env("CartPole-v1", episodes=500, obs=np.array([0.0, 0.0, 0.0, 0.0]), batch_size=10, early_stop=False)
+    t1 = time.time()
+    reinf_total_time = t1 - t0
+    reinf_rewards = np.asarray(reinforce_rewards, dtype=np.float32)
+    n_reinf = reinf_rewards.size
+    reinf_times = np.linspace(0.0, reinf_total_time, n_reinf)
+
+    # --- Graficar reward vs wall time ---
+    plt.figure(figsize=(10, 6))
+    plt.plot(dqn_times, dqn_rewards, label=f"DQN (total {dqn_total_time:.1f}s)", alpha=0.7)
+    plt.plot(reinf_times, reinf_rewards, label=f"REINFORCE (total {reinf_total_time:.1f}s)", alpha=0.7)
+    plt.xlabel("Wall time (s)")
+    plt.ylabel("Reward por episodio")
+    plt.title("DQN vs REINFORCE en CartPole-v1 — Reward vs Wall time")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("plots/dqn_vs_reinforce_cartpole_walltime.png")   
+    plt.show()
+    plt.close()
 
     # Resultados
     dqn_mean_reward = np.mean(dqn_agent.episode_rewards)
@@ -410,12 +437,12 @@ if __name__ == "__main__":
     # run_custom_envs()  --> TODAVIA NO ME FUNCIONA
 
     # 4.1: Graficar comparacion DQN vs REINFORCE en CartPole-v1
-    # CartPole_DQN_vs_REINFORCE()
+    CartPole_DQN_vs_REINFORCE()
 
     # Experimento 2: Comparar DQN con y sin target network
     # compare_target_network_vs_no_target()
 
     # Experimento 3: Comparar DQN con replay buffer vs sin replay (actualización online)
-    compare_replay_vs_no_replay()
+    # compare_replay_vs_no_replay()
 
     pass
