@@ -434,10 +434,10 @@ if __name__ == "__main__":
     # agent_minatar.plot_moving_average_rewards(window=100, title="DQN_Minatar_Breakout_Moving_Average_Rewards")
 
     # Experimento 1: Correr custom environments 
-    # run_custom_envs()  --> TODAVIA NO ME FUNCIONA
+    run_custom_envs() 
 
     # 4.1: Graficar comparacion DQN vs REINFORCE en CartPole-v1
-    CartPole_DQN_vs_REINFORCE()
+    # CartPole_DQN_vs_REINFORCE()
 
     # Experimento 2: Comparar DQN con y sin target network
     # compare_target_network_vs_no_target()

@@ -117,7 +117,7 @@ def run_custom_envs():
     return
 
 if __name__ == "__main__":
-    # run_custom_envs() 
+    run_custom_envs() 
     # run_FrozenLake()
 
     # Experimento 2: TUNEO DE HIPERPARÁMETROS
@@ -149,21 +149,21 @@ if __name__ == "__main__":
     # agent.plot_rewards_moving_average(title="FrozenLake_epsilon_decay")
 
     # Experimento 5: Comparar decay vs no decay
-    agent_nodecay = run_FrozenLake() # sin decay
-    cfg_decay = QLearningConfig(
-        env_name="FrozenLake-v1",
-        episodes=5000,
-        alpha=0.1,
-        gamma=0.99,
-        epsilon=1,
-        min_epsilon=0.01,
-        max_epsilon=1.0,
-        decay_rate=0.001,
-        is_slippery=False,
-        use_decay=True,
-        log_every=200,
-        seed=0,
-    )
-    agent_decay = run_FrozenLake(cfg_decay)
-    plot_decay_nodecay(agent_decay, agent_nodecay, window=100, title="FrozenLake_decay_vs_nodecay_rewards")
+    # agent_nodecay = run_FrozenLake() # sin decay
+    # cfg_decay = QLearningConfig(
+    #     env_name="FrozenLake-v1",
+    #     episodes=5000,
+    #     alpha=0.1,
+    #     gamma=0.99,
+    #     epsilon=1,
+    #     min_epsilon=0.01,
+    #     max_epsilon=1.0,
+    #     decay_rate=0.001,
+    #     is_slippery=False,
+    #     use_decay=True,
+    #     log_every=200,
+    #     seed=0,
+    # )
+    # agent_decay = run_FrozenLake(cfg_decay)
+    # plot_decay_nodecay(agent_decay, agent_nodecay, window=100, title="FrozenLake_decay_vs_nodecay_rewards")
 

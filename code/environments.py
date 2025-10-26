@@ -14,18 +14,19 @@ class ConstantRewardEnv(gym.Env):
     """
     def __init__(self):
         super().__init__()
-        self.observation_space = gym.spaces.Discrete(1)   # 1 estado: 0
+        self.observation_space = gym.spaces.Box(low=0.0, high=0.0, shape=(1,), dtype=np.float32)
         self.action_space = gym.spaces.Discrete(1)        # Una sola accion posible: 0
-        self.rewards = {0: 1} # Recompensa constante +1 para la unica accion posible 0
+        self._state = 0.0
     
     # Internal function for current observation.
     def _get_obs(self):
-        return 0
+        return np.array([self._state], dtype=np.float32)
     
     def reset(self, seed=None, options=None):
         """ Resets the environment to an initial state and returns an initial observation. """
         super().reset(seed=seed)
-        return self._get_obs(), {} # el diccionario es de info
+        self._state = 0.0
+        return self._get_obs(), {}
 
     def step(self, action):
         """ 
@@ -43,11 +44,11 @@ class ConstantRewardEnv(gym.Env):
             truncated (bool): whether the episode was truncated (due to a time/steps limit)
             info (dict): contains auxiliary information
         """
-        
+
         assert self.action_space.contains(action), "Acción inválida"
-        reward = self.rewards[action] # De todas formas sera una recompensa constante +1
-        terminated = True # Siempre termina en un solo paso
-        return self._get_obs(), reward, terminated, False, {} # El false es de truncated.
+        reward = 1.0
+        terminated = True  # episodio de 1 paso
+        return self._get_obs(), float(reward), terminated, False, {}
     
     def close(self):
         pass
@@ -66,24 +67,25 @@ class RandomObsBinaryRewardEnv(gym.Env):
 
     def __init__(self):
         super().__init__()
-        self.observation_space = gym.spaces.Discrete(2)   # {0,1}
-        self.action_space = gym.spaces.Discrete(1) # Una sola accion posible: 0
+        super().__init__()
+        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
+        self.action_space = gym.spaces.Discrete(1)
         self.rewards = {0: -1, 1: 1} # Recompensa +1 si la observacion es +1 y -1 si la observacion es -1
-        self.state = None 
+        self._state = None 
 
     def _get_obs(self):
-        return int(self.state)
+        return np.array([float(self._state)], dtype=np.float32)
     
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.state = np.random.randint(0, 2)  # 0 o 1
+        self._state = int(np.random.randint(0, 2))  # 0 o 1
         return self._get_obs(), {}
 
     def step(self, action):
         assert self.action_space.contains(action), "Acción inválida"
-        reward = self.rewards[self.state] # Recompensa depende del estado
-        terminated = True # Siempre termina en un solo paso
-        return self._get_obs(), reward, terminated, False, {}
+        reward = self.rewards[self._state] # Recompensa depende del estado
+        terminated = True
+        return self._get_obs(), float(reward), terminated, False, {}
     
     def close(self):
         pass
@@ -99,29 +101,29 @@ class TwoStepDelayedRewardEnv(gym.Env):
 
     def __init__(self):
         super().__init__()
-        self.observation_space = gym.spaces.Discrete(2)   # {0,1}
-        self.action_space = gym.spaces.Discrete(1) # Una sola accion posible: 0
+        self.observation_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
+        self.action_space = gym.spaces.Discrete(1)
+        self._state = 0
+        self._t = 0
         self.rewards = {0: 0, 1: 1} # Recompensa +1 si la observacion es +1 y -1 si la observacion es -1
-        self.state = None 
-        self.step_count = 0
     
     def _get_obs(self):
-        return int(self.state)
+        return np.array([float(self._state)], dtype=np.float32)
     
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        self.state = 0 # Estado inicial es 0
-        self.step_count = 0
-        return self._get_obs(), {} 
+        self._state = 0 # Estado inicial en 0
+        self._t = 0
+        return self._get_obs(), {}
     
     def step(self, action):
         assert self.action_space.contains(action), "Acción inválida"
         
-        reward = self.rewards[self.state] # Primero observo el reward, desps avanzo
-        self.step_count += 1
+        reward = self.rewards[self._state] # Primero observo el reward, desps avanzo
+        self._t += 1
         
-        if self.step_count == 1:
-            self.state = 1 # Cambia a estado 1 en el segundo paso
+        if self._t == 1:
+            self._state = 1 # Cambia a estado 1 en el segundo paso
             terminated = False
         else:
             terminated = True # Termina después del segundo paso

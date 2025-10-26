@@ -55,7 +55,15 @@ class QLearningAgent:
             np.random.seed(config.seed)
         
         # Usamos cantidad de estados x cantidad de acciones 
-        nS = self.env.observation_space.n
+        try:
+            nS = self.env.observation_space.n
+        except AttributeError:
+            high_val = float(np.max(self.env.observation_space.high))
+            if high_val == 0.0:
+                nS = 1
+            elif high_val == 1.0:
+                nS = 2
+
         nA = self.env.action_space.n
         # para inicializar la tabla Q en ceros
         self.Q = np.zeros((nS, nA), dtype=np.float32)
@@ -74,6 +82,10 @@ class QLearningAgent:
         """ Epsilon-greedy action selection. """
         if np.random.rand() < epsilon:
             return self.env.action_space.sample()
+    
+        if not isinstance(state, int):
+            state = int(state[0])
+
         q_row = self.Q[state] # valores de Q(s, a1), Q(s, a2), ...
         max_q = np.max(q_row) # valor maximo de Q(s, ai)
         best_actions = np.flatnonzero(q_row == max_q) # indices de las acciones con valor maximo
@@ -83,8 +95,17 @@ class QLearningAgent:
         """ Implements the Q-learning update for a given transition. """
         # Aplica la regla de actualizacion de Q-Learning
         cfg = self.config
+        if not isinstance(s_next, int):
+            s_next = int(s_next[0])
+
         best_next = 0.0 if terminated else np.max(self.Q[s_next])
         td_target = r + cfg.gamma * best_next
+        print(f"state: {s}, action: {a}")
+
+        # Si el estado no es un int 
+        if not isinstance(s, int):
+            s = int(s[0])
+            
         td_error = td_target - self.Q[s, a]
         self.Q[s, a] += cfg.alpha * td_error
 
